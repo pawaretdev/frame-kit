@@ -26,18 +26,22 @@ export function FrameGrid() {
 function FrameCard({ frame }: { frame: FrameItem }) {
   const downloadOne = useToolStore((s) => s.downloadOne);
   const removeFrame = useToolStore((s) => s.removeFrame);
+  const openViewer = useToolStore((s) => s.openViewer);
+  const label = `Frame at ${formatDuration(frame.timestamp, { ms: true })}`;
 
   return (
     <li className="group overflow-hidden rounded-xl border bg-card" data-testid="frame-card">
       <div className="relative aspect-video bg-muted">
-        {/* eslint-disable-next-line @next/next/no-img-element -- object URL, not optimisable */}
-        <img
-          src={frame.thumbnailUrl}
-          alt={`Frame at ${formatDuration(frame.timestamp, { ms: true })}`}
-          loading="lazy"
-          decoding="async"
-          className="size-full object-contain"
-        />
+        <button
+          type="button"
+          className="block size-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => openViewer(frame.id)}
+          aria-label={`View ${frame.fileName} full size`}
+          data-testid="frame-open"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- object URL, not optimisable */}
+          <img src={frame.thumbnailUrl} alt={label} loading="lazy" decoding="async" className="size-full object-contain" />
+        </button>
         <Button
           variant="secondary"
           size="icon-xs"

@@ -8,6 +8,7 @@ import { ErrorState } from "./error-state";
 import { ExtractionSettings } from "./extraction-settings";
 import { FileSummary } from "./file-summary";
 import { FrameGrid } from "./frame-grid";
+import { FrameViewer } from "./frame-viewer";
 import { NoticeBanner } from "./notice-banner";
 import { ProgressPanel } from "./progress-panel";
 import { VideoPreview } from "./video-preview";
@@ -42,6 +43,7 @@ export function VideoToImageTool() {
       <NoticeBanner />
       <FrameGrid />
       <DownloadBar />
+      <FrameViewer />
     </div>
   );
 }

@@ -119,3 +119,32 @@ test("theme can be switched and is remembered", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator("html")).toHaveClass(/dark/);
 });
+
+test("opens a frame full screen, navigates and zooms", async ({ page }) => {
+  await page.goto("/video-to-image");
+  await loadFixture(page);
+  await page.getByTestId("mode-count").click();
+  await page.getByTestId("count-input").fill("3");
+  await page.getByTestId("extract-button").click();
+  await expect(page.getByTestId("frame-card")).toHaveCount(3, { timeout: 60_000 });
+
+  await page.getByTestId("frame-open").nth(1).click();
+  const viewer = page.getByTestId("frame-viewer");
+  await expect(viewer).toBeVisible();
+  await expect(page.getByTestId("viewer-title")).toHaveText("frame-00002.jpg");
+  await expect(page.getByTestId("viewer-counter")).toHaveText("2 / 3");
+  await expect(page.getByTestId("viewer-image")).toHaveAttribute("src", /^blob:/);
+
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("viewer-counter")).toHaveText("3 / 3");
+  await page.getByTestId("viewer-next").click();
+  await expect(page.getByTestId("viewer-counter")).toHaveText("1 / 3");
+
+  const before = await page.getByTestId("viewer-zoom").textContent();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  const after = await page.getByTestId("viewer-zoom").textContent();
+  expect(parseInt(after!)).toBeGreaterThan(parseInt(before!));
+
+  await page.keyboard.press("Escape");
+  await expect(viewer).toBeHidden();
+});

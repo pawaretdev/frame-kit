@@ -65,6 +65,10 @@ export interface ToolState {
   frames: FrameItem[];
   nextIndex: number;
   progress: ExtractionProgress | null;
+  /** Index into `frames` of the frame open in the full-screen viewer */
+  viewerIndex: number | null;
+  /** Object URL of the full-resolution image shown in the viewer */
+  viewerUrl: string | null;
 
   init: () => Promise<void>;
   loadFile: (file: File) => Promise<void>;
@@ -80,6 +84,10 @@ export interface ToolState {
   downloadOne: (id: string) => void;
   downloadAll: () => Promise<void>;
   dismissNotice: () => void;
+  openViewer: (id: string) => void;
+  closeViewer: () => void;
+  /** Move the viewer by `delta` frames, wrapping around */
+  stepViewer: (delta: number) => void;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -108,6 +116,18 @@ export function toEncodeOptions(s: Settings): EncodeOptions {
   if (s.resolution === "custom") maxEdge = s.customWidth > 0 ? Math.round(s.customWidth) : undefined;
   else if (s.resolution !== "original") maxEdge = Number(s.resolution);
   return { format: s.format, quality: s.quality, maxEdge };
+}
+
+let currentViewerUrl: string | null = null;
+
+/**
+ * Object URLs for the full-resolution image live here rather than in React
+ * state so StrictMode's double effects can never revoke a URL still in use.
+ */
+function viewerState(frame: FrameItem | null | undefined, index?: number): Pick<ToolState, "viewerIndex" | "viewerUrl"> {
+  if (currentViewerUrl) URL.revokeObjectURL(currentViewerUrl);
+  currentViewerUrl = frame ? URL.createObjectURL(frame.blob) : null;
+  return { viewerIndex: frame ? (index ?? null) : null, viewerUrl: currentViewerUrl };
 }
 
 function toItem(frame: ExtractedFrame): FrameItem {
@@ -195,6 +215,8 @@ export const useToolStore = create<ToolState>((set, get) => {
     frames: [],
     nextIndex: 1,
     progress: null,
+    viewerIndex: null,
+    viewerUrl: null,
 
     init: async () => {
       if (get().capabilities) return;
@@ -274,6 +296,7 @@ export const useToolStore = create<ToolState>((set, get) => {
         frames: [],
         nextIndex: 1,
         progress: null,
+        ...viewerState(null),
       }));
     },
 
@@ -317,13 +340,16 @@ export const useToolStore = create<ToolState>((set, get) => {
       set((s) => {
         const frame = s.frames.find((f) => f.id === id);
         if (frame) URL.revokeObjectURL(frame.thumbnailUrl);
-        return { frames: s.frames.filter((f) => f.id !== id) };
+        const frames = s.frames.filter((f) => f.id !== id);
+        const viewerIndex =
+          s.viewerIndex === null || frames.length === 0 ? null : Math.min(s.viewerIndex, frames.length - 1);
+        return { frames, ...viewerState(viewerIndex === null ? null : frames[viewerIndex]) };
       });
     },
 
     clearFrames: () => {
       for (const f of get().frames) URL.revokeObjectURL(f.thumbnailUrl);
-      set({ frames: [], nextIndex: 1, truncatedTo: null, notice: null });
+      set({ frames: [], nextIndex: 1, truncatedTo: null, notice: null, ...viewerState(null) });
     },
 
     downloadOne: (id) => {
@@ -351,5 +377,20 @@ export const useToolStore = create<ToolState>((set, get) => {
 
     dismissNotice: () => set({ notice: null, truncatedTo: null }),
 
+    openViewer: (id) => {
+      const { frames } = get();
+      const index = frames.findIndex((f) => f.id === id);
+      if (index >= 0) set(viewerState(frames[index], index));
+    },
+
+    closeViewer: () => set(viewerState(null)),
+
+    stepViewer: (delta) =>
+      set((s) => {
+        if (s.viewerIndex === null || s.frames.length === 0) return {};
+        const n = s.frames.length;
+        const index = (((s.viewerIndex + delta) % n) + n) % n;
+        return viewerState(s.frames[index], index);
+      }),
   };
 });
