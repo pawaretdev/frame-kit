@@ -104,3 +104,18 @@ test("the <video> fallback engine extracts frames too", async ({ page }) => {
   await expect(page.getByTestId("frame-card")).toHaveCount(4, { timeout: 60_000 });
   await expect(page.getByTestId("frame-card").first()).toContainText("frame-00001.png");
 });
+
+test("theme can be switched and is remembered", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto("/");
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
+  await page.getByTestId("theme-dark").click();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await page.reload();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await page.getByTestId("theme-light").click();
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
+  await page.getByTestId("theme-system").click();
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page.locator("html")).toHaveClass(/dark/);
+});
