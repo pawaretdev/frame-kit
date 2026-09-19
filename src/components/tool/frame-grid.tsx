@@ -34,7 +34,7 @@ function FrameCard({ frame }: { frame: FrameItem }) {
       <div className="relative aspect-video bg-muted">
         <button
           type="button"
-          className="block size-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="block size-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => openViewer(frame.id)}
           aria-label={`View ${frame.fileName} full size`}
           data-testid="frame-open"

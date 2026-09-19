@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Download, Maximize2, Minus, Plus, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { formatBytes, formatDuration } from "@/lib/format";
@@ -19,7 +19,8 @@ interface View {
 
 /**
  * Full-screen viewer for extracted frames: fit-to-screen by default, zoom with
- * wheel / pinch / buttons, drag to pan, arrow keys to move between frames.
+ * a single click / wheel / pinch / buttons, drag to pan, arrow keys to move
+ * between frames.
  */
 export function FrameViewer() {
   const frames = useToolStore((s) => s.frames);
@@ -50,7 +51,8 @@ function ViewerBody({ frame, url, index, total }: { frame: FrameItem; url: strin
   const [fitScale, setFitScale] = useState(1);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<{ distance: number; scale: number } | null>(null);
-  const drag = useRef<{ x: number; y: number; startX: number; startY: number } | null>(null);
+  const drag = useRef<{ x: number; y: number; startX: number; startY: number; moved: boolean } | null>(null);
+  const gesture = useRef<{ pinched: boolean }>({ pinched: false });
 
   const computeFit = useCallback(() => {
     const stage = stageRef.current;
@@ -107,10 +109,28 @@ function ViewerBody({ frame, url, index, total }: { frame: FrameItem; url: strin
     return { cx: e.clientX - rect.left - rect.width / 2, cy: e.clientY - rect.top - rect.height / 2 };
   };
 
-  const onWheel = (e: ReactWheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const { cx, cy } = stageCentre(e);
-    zoomAt(Math.exp(-e.deltaY * 0.002), cx, cy);
+  // React registers wheel listeners as passive, so attach natively to be able to
+  // block page scrolling while zooming.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = stage.getBoundingClientRect();
+      zoomAt(Math.exp(-e.deltaY * 0.002), e.clientX - rect.left - rect.width / 2, e.clientY - rect.top - rect.height / 2);
+    };
+    stage.addEventListener("wheel", onWheel, { passive: false });
+    return () => stage.removeEventListener("wheel", onWheel);
+  }, [zoomAt]);
+
+  /** Single click: zoom in at the cursor, or back to fit when already zoomed. */
+  const toggleZoom = (e: { clientX: number; clientY: number }) => {
+    if (view.scale > fitScale * 1.01) {
+      resetView();
+    } else {
+      const { cx, cy } = stageCentre(e);
+      zoomAt(Math.max(2, 1 / fitScale) / view.scale, cx, cy);
+    }
   };
 
   const isControl = (target: EventTarget | null) => target instanceof Element && target.closest("button") !== null;
@@ -120,10 +140,12 @@ function ViewerBody({ frame, url, index, total }: { frame: FrameItem; url: strin
     e.currentTarget.setPointerCapture(e.pointerId);
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointers.current.size === 1) {
-      drag.current = { x: view.x, y: view.y, startX: e.clientX, startY: e.clientY };
+      gesture.current.pinched = false;
+      drag.current = { x: view.x, y: view.y, startX: e.clientX, startY: e.clientY, moved: false };
     } else if (pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()];
       pinch.current = { distance: Math.hypot(a.x - b.x, a.y - b.y), scale: view.scale };
+      gesture.current.pinched = true;
       drag.current = null;
     }
   };
@@ -142,23 +164,21 @@ function ViewerBody({ frame, url, index, total }: { frame: FrameItem; url: strin
       });
     } else if (drag.current) {
       const d = drag.current;
-      setView((v) => ({ ...v, x: d.x + (e.clientX - d.startX), y: d.y + (e.clientY - d.startY) }));
+      const dx = e.clientX - d.startX;
+      const dy = e.clientY - d.startY;
+      if (!d.moved && Math.hypot(dx, dy) < 4) return; // still a click, not a drag
+      d.moved = true;
+      setView((v) => ({ ...v, x: d.x + dx, y: d.y + dy }));
     }
   };
 
   const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!pointers.current.has(e.pointerId)) return;
     pointers.current.delete(e.pointerId);
+    const wasClick = pointers.current.size === 0 && drag.current !== null && !drag.current.moved && !gesture.current.pinched;
     if (pointers.current.size < 2) pinch.current = null;
     if (pointers.current.size === 0) drag.current = null;
-  };
-
-  const onDoubleClick = (e: ReactPointerEvent<HTMLDivElement> | React.MouseEvent<HTMLDivElement>) => {
-    if (isControl(e.target)) return;
-    if (view.scale > fitScale * 1.01) resetView();
-    else {
-      const { cx, cy } = stageCentre(e);
-      zoomAt(Math.max(2, 1 / fitScale) / view.scale, cx, cy);
-    }
+    if (wasClick && e.type !== "pointercancel") toggleZoom(e);
   };
 
   const percent = Math.round(view.scale * 100);
@@ -213,12 +233,10 @@ function ViewerBody({ frame, url, index, total }: { frame: FrameItem; url: strin
         ref={stageRef}
         className="relative min-h-0 flex-1 touch-none select-none overflow-hidden"
         style={{ cursor: view.scale > fitScale * 1.01 ? "grab" : "zoom-in" }}
-        onWheel={onWheel}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        onDoubleClick={onDoubleClick}
         data-testid="viewer-stage"
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- object URL, not optimisable */}
@@ -268,7 +286,7 @@ function ViewerBody({ frame, url, index, total }: { frame: FrameItem; url: strin
         <span data-testid="viewer-counter">
           {index + 1} / {total}
         </span>
-        <span className="hidden sm:inline">← → frames · scroll or pinch to zoom · double-click to toggle · Esc to close</span>
+        <span className="hidden sm:inline">click, scroll or pinch to zoom · drag to pan · ← → frames · Esc to close</span>
       </footer>
     </div>
   );

@@ -140,10 +140,23 @@ test("opens a frame full screen, navigates and zooms", async ({ page }) => {
   await page.getByTestId("viewer-next").click();
   await expect(page.getByTestId("viewer-counter")).toHaveText("1 / 3");
 
-  const before = await page.getByTestId("viewer-zoom").textContent();
+  const zoomPercent = async () => parseInt((await page.getByTestId("viewer-zoom").textContent())!);
+  const fit = await zoomPercent();
   await page.getByRole("button", { name: "Zoom in" }).click();
-  const after = await page.getByTestId("viewer-zoom").textContent();
-  expect(parseInt(after!)).toBeGreaterThan(parseInt(before!));
+  expect(await zoomPercent()).toBeGreaterThan(fit);
+  await page.getByTestId("viewer-zoom").click(); // back to fit
+  expect(await zoomPercent()).toBe(fit);
+
+  // a single click on the image zooms in at the cursor; a second click returns to fit
+  await page.getByTestId("viewer-image").click();
+  expect(await zoomPercent()).toBeGreaterThan(fit);
+  await page.getByTestId("viewer-image").click();
+  expect(await zoomPercent()).toBe(fit);
+
+  // scrolling zooms too
+  await page.getByTestId("viewer-image").hover();
+  await page.mouse.wheel(0, -300);
+  await expect.poll(zoomPercent).toBeGreaterThan(fit);
 
   await page.keyboard.press("Escape");
   await expect(viewer).toBeHidden();
